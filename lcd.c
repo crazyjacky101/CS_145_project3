@@ -158,8 +158,7 @@ PlayState play_state = IDLE;
 
 typedef enum
 {
-	A, As, B, C, Cs, D, Ds, Ee, F, Fs, G,
-	Gs
+	A, As, B, C, Cs, D, Ds, Ee, F, Fs, G, Gs, Z
 } Note;
 
 
@@ -201,18 +200,19 @@ float get_frequency(Note n)
 {
 	switch (n)
 	{
-		case A:  return 220.00;
-		case As: return 233.08;
-		case B:  return 246.94;
-		case C:  return 261.63;
-		case Cs: return 277.18;
-		case D:  return 293.66;
-		case Ds: return 311.13;
-		case Ee: return 329.63;
-		case F:  return 349.23;
-		case Fs: return 369.99;
+		case A:  return (220.00)*2;
+		case As: return (233.08)*2;
+		case B:  return (246.94)*2;
+		case C:  return (261.63)*2;
+		case Cs: return (277.18)*2;
+		case D:  return (293.66)*2;
+		case Ds: return (311.13)*2;
+		case Ee: return (329.63)*2;
+		case F:  return (349.23)*2;
+		case Fs: return (369.99)*2;
 		case G:  return 392.00;
 		case Gs: return 415.30;
+		case Z: return 0.00;
 		default: return 440.00;
 	}
 }
@@ -221,59 +221,9 @@ float get_frequency(Note n)
 int get_frequency_period(Note n)
 {
 	float freq = get_frequency(n);
-	return (int)(1000.0 / (2 * freq));  // Half period in ms
+	return (int)(1000 / (2 * freq));  // in ms
 }
 
-
-void play_note(const PlayingNote* note)
-{
-	int period = get_frequency_period(note->note); // in ms
-	int duration = get_duration_ms(note->duration); // in ms
-	int cycles = duration / (2 * period); // since each cycle has ON and OFF
-	
-	for (int i = 0; i < cycles; i++)
-	{
-		// ON phase
-		SET_BIT(PORTB, 3);
-		for (int ms = 0; ms < period; ms++)
-		{
-			int k = keypad_get_key();
-			if (k == 8)  // check for B
-			{
-				should_stop = true;
-				return;
-			}
-			avr_wait(1);
-		}
-
-		// OFF phase
-		CLR_BIT(PORTB, 3);
-		for (int ms = 0; ms < period; ms++)
-		{
-			int k = keypad_get_key();
-			if (k == 8)
-			{
-				should_stop = true;
-				return;
-			}
-			avr_wait(1);
-		}
-	}
-}
-
-
-void play_song(const PlayingNote song[], int length)
-{
-	should_stop = false; // reset stop flag
-	
-	for (int i = 0; i < length; i++)
-	{
-		if (should_stop)
-			break;
-			
-		play_note(&song[i]);
-	}
-}
 
 
 static const char MAP[16] = {
@@ -286,24 +236,24 @@ static const char MAP[16] = {
 
 PlayingNote shooting_stars[] = {
 	{Ds, W},
-	/* Wait for half */
+	/* Wait for half */ {Z, H},
 	{Ds, H},
 	{Ee, H},
-	/* Wait for half */
+	/* Wait for half */ {Z, H},
 	{B, Q},
-	/* Wait for quarter */
+	/* Wait for quarter */ {Z, Q},
 	{Gs, Q}
 	/* Keep going... */
 };
 PlayingNote STARS[] = {
-	{C, W},
+	{A, H},
 	/* Wait for half */
-	{Ds, H},
-	{Ee, H},
+	{B, H},
+	{C, H},
 	/* Wait for half */
-	{G, Q},
+	{G, H},
 	/* Wait for quarter */
-	{As, Q}
+	{A, H}
 	/* Keep going... */
 };
 
@@ -313,10 +263,10 @@ SongList songs[] =
 	{ shooting_stars, "Shooting Stars", NUM_NOTES(shooting_stars) },
 	{ STARS, "STARS", NUM_NOTES(STARS) }
 };
-
-
 SongList* current_song = NULL;
 const int total_songs = sizeof(songs) / sizeof(songs[0]);
+
+
 
 
 /*** keypad settings ***/
@@ -348,7 +298,6 @@ int keypad_get_key(void)
 		{
 			if (is_pressed(i, j))
 			{
-				avr_wait(20);
 				if (is_pressed(i, j))
 				{
 					while(is_pressed(i,j))
@@ -405,14 +354,48 @@ void set_song(void)
 }
 
 
+void play_note(const PlayingNote* note)
+{
+	int period = get_frequency_period(note->note); // in ms
+	int duration = get_duration_ms(note->duration); // in ms
+	int k = duration / (2 * period); // total number of ON+OFF cycles
+
+	for (int i = 0; i < k; i++)
+	{
+		SET_BIT(PORTB, 3);   // speaker ON
+		avr_wait(period);    // wait half a wave
+		CLR_BIT(PORTB, 3);   // speaker OFF
+		avr_wait(period);    // wait the other half
+	}
+}
+
+void play_song(const PlayingNote song[], int length)
+{
+	should_stop = false; // reset stop flag
+	
+	for (int i = 0; i < length; i++)
+	{
+		if (should_stop)
+		{
+			break;
+		}
+		
+		play_note(&song[i]);
+		
+	}
+}
 
 
-/*** demo only settings to make sure LCD works***/
+
+
+/** demo only settings to make sure LCD works**/
 int main(void)
 {
 	
 	avr_init();
 	lcd_init();
+	SET_BIT(DDRB, 3);
+
 	
 	lcd_clr();
 	lcd_pos(0, 0);
@@ -472,4 +455,79 @@ int main(void)
 			}
 		}
 	}
+} 
+
+
+/**
+void play_note(const PlayingNote* note)
+{
+	int period = get_frequency_period(note->note); // in ms
+	int duration = get_duration_ms(note->duration); // in ms
+	int k = duration / (2 * period); // total number of ON+OFF cycles
+
+	for (int i = 0; i < k; i++) 
+	{
+		SET_BIT(PORTB, 3);   // speaker ON
+		avr_wait(period);    // wait half a wave
+		CLR_BIT(PORTB, 3);   // speaker OFF
+		avr_wait(period);    // wait the other half
+	}
 }
+**/
+
+
+
+/**
+int main(void) 
+{
+	avr_init();
+	lcd_init();
+	SET_BIT(DDRB, 3); 
+	
+	lcd_clr();
+	lcd_pos(0, 0);
+	lcd_puts2("Loading.....");
+	avr_wait(1000);
+
+	while (1) 
+	{
+		lcd_clr();
+		lcd_pos(0, 0);
+		lcd_puts2("Shooting stars");
+		lcd_pos(1, 0);
+		lcd_puts2("playing...");
+		
+		play_song(shooting_stars, NUM_NOTES(shooting_stars));
+		
+		lcd_clr();
+		avr_wait(1000); // optional delay between repeats
+	}
+}
+
+
+int main(void)
+{
+	
+
+	while (1)
+	{
+		for (int i = 0; i < 100; i++)
+		{
+			SET_BIT(PORTB, 3);
+			avr_wait(1); 
+			CLR_BIT(PORTB, 3);
+			avr_wait(1); 
+		}
+		avr_wait(300); 
+
+		for (int i = 0; i < 50; i++)
+		{
+			SET_BIT(PORTB, 3);
+			avr_wait(3); 
+			CLR_BIT(PORTB, 3);
+			avr_wait(3); 
+		}
+		avr_wait(300); 
+	}
+}
+**/
