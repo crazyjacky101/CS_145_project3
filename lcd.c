@@ -220,6 +220,11 @@ float get_frequency(Note n)
 
 int get_frequency_period(Note n)
 {
+	if (n == Z)
+	{
+		return -1; // special for rest (since zero freq)
+	} 
+	
 	float freq = get_frequency(n);
 	return (int)(1000 / (2 * freq));  // in ms
 }
