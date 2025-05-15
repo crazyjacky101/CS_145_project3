@@ -139,6 +139,7 @@ lcd_puts2(const char *s)
 #define HALF_DURATION    500
 #define QUARTER_DURATION 250
 #define EIGHTH_DURATION  125
+int  pitch_shift = 0;
 int tempo_factor = 1;  // 1 = normal speed
 
 static int last_played = -1;
@@ -198,37 +199,48 @@ int get_duration_ms(Duration d)
 
 float get_frequency(Note n)
 {
+	float base_freq;
 	switch (n)
 	{
-		case A:  return (220.00)*2;
-		case As: return (233.08)*2;
-		case B:  return (246.94)*2;
-		case C:  return (261.63)*2;
-		case Cs: return (277.18)*2;
-		case D:  return (293.66)*2;
-		case Ds: return (311.13)*2;
-		case Ee: return (329.63)*2;
-		case F:  return (349.23)*2;
-		case Fs: return (369.99)*2;
-		case G:  return 392.00;
-		case Gs: return 415.30;
-		case Z: return 0.00;
+		case A:  base_freq = 220.00; break;
+		case As: base_freq = 233.08; break;
+		case B:  base_freq = 246.94; break;
+		case C:  base_freq = 261.63; break;
+		case Cs: base_freq = 277.18; break;
+		case D:  base_freq = 293.66; break;
+		case Ds: base_freq = 311.13; break;
+		case Ee: base_freq = 329.63; break;
+		case F:  base_freq = 349.23; break;
+		case Fs: base_freq = 369.99; break;
+		case G:  base_freq = 392.00; break;
+		case Gs: base_freq = 415.30; break;
+		case Z:  return 0.00;
 		default: return 440.00;
+	}
+
+	switch (pitch_shift)
+	{
+		case 0: return base_freq / 2.0;  // Low pitch
+		case 1: return base_freq;        // Normal pitch
+		case 2: return base_freq * 2.0;  // High pitch
+		default: return base_freq;
 	}
 }
 
 
 int get_frequency_period(Note n)
 {
-	if (n == Z)
+	if (n == Z) 
 	{
-		return -1; // special for rest (since zero freq)
-	} 
-	
+		return -1;        
+	}
 	float freq = get_frequency(n);
-	return (int)(1000 / (2 * freq));  // in ms
-}
+	float p_f = 1000.0f / (2.0f * freq);
+	int p = (int)(p_f + 0.5f);   // round to nearest ms
 
+	// never return 0
+	return (p > 0 ? p : 1);
+}
 
 
 static const char MAP[16] = {
@@ -251,16 +263,23 @@ PlayingNote shooting_stars[] = {
 	/* Keep going... */
 };
 PlayingNote STARS[] = {
-	{A, H},
-	/* Wait for half */
-	{B, H},
-	{C, H},
-	/* Wait for half */
-	{G, H},
-	/* Wait for quarter */
-	{A, H}
-	/* Keep going... */
+	{ C,  Q }, { Z,  Q },
+	{ C,  Q }, { Z,  Q },
+	{ G,  Q }, { Z,  Q },
+	{ G,  Q }, { Z,  Q },
+	{ A,  Q }, { Z,  Q },
+	{ A,  Q }, { Z,  Q },
+	{ G,  H }, { Z,  H },
+
+	{ F,  Q }, { Z,  Q },
+	{ F,  Q }, { Z,  Q },
+	{ Ee, Q }, { Z,  Q },
+	{ Ee, Q }, { Z,  Q },
+	{ D,  Q }, { Z,  Q },
+	{ D,  Q }, { Z,  Q },
+	{ C,  H }, { Z,  H }
 };
+
 
 // list of all our songs
 SongList songs[] =
@@ -285,7 +304,7 @@ int is_pressed(int r, int c)
 	CLR_BIT(PORTA, r);
 	SET_BIT(PORTA, c + 4);
 
-	avr_wait(5);
+	avr_wait(1);
 	if (GET_BIT(PINA, c + 4) == 0)
 	{
 		
@@ -358,21 +377,70 @@ void set_song(void)
 	}
 }
 
+/**
+void play_note(const PlayingNote* note)
+{
+	int duration = get_duration_ms(note->duration);
+	
+	if (note->note == Z)
+	{
+		avr_wait(duration); // just pause
+		return;
+	}
+
+	int period = get_frequency_period(note->note);
+	int cycles = duration / (2 * period);
+	int k;
+	
+	for (int i = 0; i < cycles; i++)
+	{
+		
+
+		SET_BIT(PORTB, 3);
+		avr_wait(period);
+		CLR_BIT(PORTB, 3);
+		avr_wait(period);
+	}
+} **/
 
 void play_note(const PlayingNote* note)
 {
-	int period = get_frequency_period(note->note); // in ms
-	int duration = get_duration_ms(note->duration); // in ms
-	int k = duration / (2 * period); // total number of ON+OFF cycles
+	if (keypad_get_key() == 8) { should_stop = true; return; }
+	int duration = get_duration_ms(note->duration);
 
-	for (int i = 0; i < k; i++)
+	// handle by splitting into 1 ms waits
+	if (note->note == Z) 
 	{
-		SET_BIT(PORTB, 3);   // speaker ON
-		avr_wait(period);    // wait half a wave
-		CLR_BIT(PORTB, 3);   // speaker OFF
-		avr_wait(period);    // wait the other half
+		for (int t = 0; t < duration; t++) 
+		{
+			avr_wait(1);
+		}
+		return;
+	}
+
+	int period = get_frequency_period(note->note);
+	if (period <= 0) period = 1; // safety
+	int cycles = duration / (2 * period);
+	int k;
+
+	for (int i = 0; i < cycles; i++) 
+	{
+		// high half-wave
+		SET_BIT(PORTB, 3);
+		for (int ms = 0; ms < period; ms++) 
+		{
+			avr_wait(1);
+		}
+
+		// low half-wave
+		CLR_BIT(PORTB, 3);
+		for (int ms = 0; ms < period; ms++) 
+		{
+			avr_wait(1);
+		}
 	}
 }
+
 
 void play_song(const PlayingNote song[], int length)
 {
@@ -386,6 +454,7 @@ void play_song(const PlayingNote song[], int length)
 		}
 		
 		play_note(&song[i]);
+		//play_note_split(&song[i]);
 		
 	}
 }
@@ -459,80 +528,35 @@ int main(void)
 				display_no_song();
 			}
 		}
+		else if (k == 12) // C - Tempo
+		{
+			tempo_factor = (tempo_factor % 3) +1; // cycles 
+
+			lcd_clr();
+			lcd_pos(0, 0);
+			switch (tempo_factor)
+			{
+				case 1: lcd_puts2("Slow tempo"); break;
+				case 2: lcd_puts2("Normal tempo"); break;
+				case 3: lcd_puts2("Fast tempo"); break;
+			}
+			avr_wait(1000);
+			//display_no_song();
+		}
+		else if (k == 16) // D - Pitch
+		{
+			pitch_shift = (pitch_shift + 1) % 3; // cycles
+
+			lcd_clr();
+			lcd_pos(0, 0);
+			switch (pitch_shift)
+			{
+				case 0: lcd_puts2("Low pitch"); break;
+				case 1: lcd_puts2("Normal pitch"); break;
+				case 2: lcd_puts2("High pitch"); break;
+			}
+			avr_wait(1000);
+			//display_no_song();
+		}
 	}
 } 
-
-
-/**
-void play_note(const PlayingNote* note)
-{
-	int period = get_frequency_period(note->note); // in ms
-	int duration = get_duration_ms(note->duration); // in ms
-	int k = duration / (2 * period); // total number of ON+OFF cycles
-
-	for (int i = 0; i < k; i++) 
-	{
-		SET_BIT(PORTB, 3);   // speaker ON
-		avr_wait(period);    // wait half a wave
-		CLR_BIT(PORTB, 3);   // speaker OFF
-		avr_wait(period);    // wait the other half
-	}
-}
-**/
-
-
-
-/**
-int main(void) 
-{
-	avr_init();
-	lcd_init();
-	SET_BIT(DDRB, 3); 
-	
-	lcd_clr();
-	lcd_pos(0, 0);
-	lcd_puts2("Loading.....");
-	avr_wait(1000);
-
-	while (1) 
-	{
-		lcd_clr();
-		lcd_pos(0, 0);
-		lcd_puts2("Shooting stars");
-		lcd_pos(1, 0);
-		lcd_puts2("playing...");
-		
-		play_song(shooting_stars, NUM_NOTES(shooting_stars));
-		
-		lcd_clr();
-		avr_wait(1000); // optional delay between repeats
-	}
-}
-
-
-int main(void)
-{
-	
-
-	while (1)
-	{
-		for (int i = 0; i < 100; i++)
-		{
-			SET_BIT(PORTB, 3);
-			avr_wait(1); 
-			CLR_BIT(PORTB, 3);
-			avr_wait(1); 
-		}
-		avr_wait(300); 
-
-		for (int i = 0; i < 50; i++)
-		{
-			SET_BIT(PORTB, 3);
-			avr_wait(3); 
-			CLR_BIT(PORTB, 3);
-			avr_wait(3); 
-		}
-		avr_wait(300); 
-	}
-}
-**/
