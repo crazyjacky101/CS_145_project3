@@ -159,7 +159,7 @@ PlayState play_state = IDLE;
 
 typedef enum
 {
-	A, As, B, C, Cs, D, Ds, Ee, F, Fs, G, Gs, Z
+	A, As, B, C, Cs, D, Ds, Ee, F, Fs, G, Gs, Z, A2
 } Note;
 
 
@@ -214,6 +214,7 @@ float get_frequency(Note n)
 		case Fs: base_freq = 369.99; break;
 		case G:  base_freq = 392.00; break;
 		case Gs: base_freq = 415.30; break;
+		case A2: base_freq = 440.00; break;
 		case Z:  return 0.00;
 		default: return 440.00;
 	}
@@ -228,7 +229,7 @@ float get_frequency(Note n)
 }
 
 
-int get_frequency_period(Note n)
+float get_frequency_period(Note n)
 {
 	if (n == Z) 
 	{
@@ -236,10 +237,9 @@ int get_frequency_period(Note n)
 	}
 	float freq = get_frequency(n);
 	float p_f = 1000.0f / (2.0f * freq);
-	int p = (int)(p_f + 0.5f);   // round to nearest ms
 
 	// never return 0
-	return (p > 0 ? p : 1);
+	return p_f;
 }
 
 
@@ -263,22 +263,23 @@ PlayingNote shooting_stars[] = {
 	/* Keep going... */
 };
 PlayingNote STARS[] = {
-	{ C,  Q }, { Z,  Q },
-	{ C,  Q }, { Z,  Q },
-	{ G,  Q }, { Z,  Q },
-	{ G,  Q }, { Z,  Q },
-	{ A,  Q }, { Z,  Q },
-	{ A,  Q }, { Z,  Q },
-	{ G,  H }, { Z,  H },
+	{ 'C',  Q }, { Z,  Q },
+	{ 'C',  Q }, { Z,  Q },
+	{ 'G',  Q }, { Z,  Q },
+	{ 'G',  Q }, { Z,  Q },
+	{ 'A2',  Q }, { Z,  Q },
+	{ 'A2',  Q }, { Z,  Q },
+	{ 'G',  H }, { Z,  H },
 
-	{ F,  Q }, { Z,  Q },
-	{ F,  Q }, { Z,  Q },
-	{ Ee, Q }, { Z,  Q },
-	{ Ee, Q }, { Z,  Q },
-	{ D,  Q }, { Z,  Q },
-	{ D,  Q }, { Z,  Q },
-	{ C,  H }, { Z,  H }
+	{ 'Fs',  Q }, { Z,  Q },
+	{ 'Fs',  Q }, { Z,  Q },
+	{ 'F', Q }, { Z,  Q },
+	{ 'F', Q }, { Z,  Q },
+	{ 'Ee',  Q }, { Z,  Q },
+	{ 'Ee',  Q }, { Z,  Q },
+	{ 'D',  H }, { Z,  H }
 };
+
 
 
 // list of all our songs
@@ -418,8 +419,14 @@ void play_note(const PlayingNote* note)
 		return;
 	}
 
-	int period = get_frequency_period(note->note);
-	if (period <= 0) period = 1; // safety
+	float period = get_frequency_period(note->note);
+	char buf[17];
+	lcd_clr();
+	lcd_pos(0,0);
+	sprintf(buf, "%f", period);
+	lcd_puts2(buf);
+	avr_wait(1000);
+	//if (period <= 0) period = 1; // safety
 	int cycles = duration / (2 * period);
 	int k;
 
@@ -427,17 +434,21 @@ void play_note(const PlayingNote* note)
 	{
 		// high half-wave
 		SET_BIT(PORTB, 3);
+		avr_wait(period);
+		/**
 		for (int ms = 0; ms < period; ms++) 
 		{
 			avr_wait(1);
-		}
+		}**/
 
 		// low half-wave
 		CLR_BIT(PORTB, 3);
+		avr_wait(period);
+		/**
 		for (int ms = 0; ms < period; ms++) 
 		{
 			avr_wait(1);
-		}
+		}**/
 	}
 }
 
